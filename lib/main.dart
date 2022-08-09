@@ -1,23 +1,17 @@
 import 'dart:async';
-import 'dart:ui';
 import 'package:flutter/material.dart';
-import 'package:hive/hive.dart';
+import 'package:focused_menu/focused_menu.dart';
+import 'package:focused_menu/modals.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import 'package:money_tracker/entry.dart';
 import "package:money_tracker/models/global.dart";
-import "package:money_tracker/models/inner_shadow.dart";
 import 'package:auto_size_text/auto_size_text.dart';
 import 'package:money_tracker/bank_page.dart';
+import 'package:intl/intl.dart'; //for number format
+import 'db_functions.dart';
+import 'hive_adapters.dart';
 
 void main() async {
-  //initialize Hive for directory:
-  await Hive.initFlutter();
-  Hive.registerAdapter(EntryAdapter());
-  await Hive.openBox("accounts");
-  await Hive.openBox('entry_list');
-  Hive.box("accounts").values.forEach((element) {
-    print(element);
-  });
+  await hiveStart();
   runApp(MyApp());
 }
 
@@ -34,7 +28,7 @@ class MyApp extends StatelessWidget {
         title: 'Money Tracker',
         theme: ThemeData(
           //the scroll overflow will be brown instead of blue
-          accentColor: brownColor,
+          colorScheme: ColorScheme.fromSwatch().copyWith(secondary: brownColor),
         ),
         home: Scaffold(
           backgroundColor: greenColor,
@@ -52,31 +46,31 @@ class MyApp extends StatelessWidget {
 
   Widget _buildTitleBlock() {
     return Container(
-      height: 230,
+      height: 190,
       alignment: Alignment.topCenter,
       decoration: BoxDecoration(
         boxShadow: [
           new BoxShadow(
-            color: Colors.black,
-            blurRadius: 9.0,
+            color: darkGreenColor,
+            blurRadius: 7.0,
             spreadRadius: 2.0,
           ),
         ],
-        color: yellowColor1,
+        color: tanBorderColor,
         borderRadius: BorderRadius.only(
           bottomLeft: Radius.circular(30),
           bottomRight: Radius.circular(30),
         ),
       ),
-      child: InnerShadow(
-        blur: 9,
-        color: new Color(0xFFB7B797),
-        offset: const Offset(0, -9),
+      child: Container(
+        // blur: 9,
+        // color: tanShadowColor,
+        // offset: const Offset(0, -9),
         child: Container(
-          height: 200,
+          height: 160,
           width: 350,
           decoration: BoxDecoration(
-            color: yellowColor2,
+            color: innerTanColor,
             borderRadius: BorderRadius.only(
               bottomLeft: Radius.circular(30),
               bottomRight: Radius.circular(30),
@@ -88,7 +82,7 @@ class MyApp extends StatelessWidget {
                 SizedBox(
                   height: 5,
                 ),
-                Image.asset('assets/images/money_logo.png'),
+                Image.asset('assets/images/money_logo.png', scale: 1.5),
                 SizedBox(height: 20),
                 Text(
                   "Money Tracker",
@@ -103,11 +97,6 @@ class MyApp extends StatelessWidget {
   }
 }
 
-///TODO: fix problem where accounts screen isn't updating
-///TODO: provide check before making new bank account
-///TODO: add delete option when you hold down on bank name
-///TODO: add rename option when you hold down on bank name
-///TODO: add text at bottom of account list to explain how to delete and rename
 
 class BankScreen extends StatefulWidget {
   @override
@@ -115,67 +104,64 @@ class BankScreen extends StatefulWidget {
 }
 
 class _BankScreenState extends State<BankScreen> {
+  late Box<Account> accountsBox;
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: EdgeInsets.only(top: 300),
-      reverse: false,
-      //ternary operator, probably don't need this
-      children: getList(),
-    );
+    return ValueListenableBuilder(
+        valueListenable: getAccounts().listenable(),
+        builder: (context, Box<Account> _accountsBox, _) {
+          accountsBox = _accountsBox;
+          return ListView.builder(
+              padding: EdgeInsets.only(top: 230),
+              reverse: false,
+              itemCount: _accountsBox.values.length + 1, //+1 for the newAccount
+              itemBuilder: (BuildContext context, int index) {
+                //starts at zero
+                if (index == accountsBox.values.length) {
+                  return newAccountCard();
+                }
+                String cardTitle = accountsBox.keyAt(index);
+                Account cardInfo = accountsBox.getAt(index) as Account;
+                return AccountCard(
+                  bankTitle: cardTitle,
+                  infoMap: cardInfo,
+                );
+              });
+        });
   }
 
-  List<Widget> getList() {
-    var accountBox = Hive.box("accounts");
-    List<Widget> buildBoxes = [];
-    for (int i = 0; i < accountBox.length; i++) {
-      buildBoxes.add(BuildBox(
-        infoMap: accountBox.getAt(accountBox.length - 1 - i),
-      ));
-    }
-    buildBoxes.add(newAccount());
-    return buildBoxes;
-  }
-
-  Container newAccount() {
-      //add new account block (+)
-      return Container(
+  Column newAccountCard() {
+    //add new account block (+)
+    return Column(children: [
+      Container(
         alignment: AlignmentDirectional.center,
         child: InkWell(
           onTap: () {
-            createAlertDialog(context).then((bankTitle) {
-              if(bankTitle != null && bankTitle.isNotEmpty) {
-                var accountBox = Hive.box("accounts");
-                var infoMap = {
-                  'name': bankTitle,
-                  'balance': 0.00,
-                  'last_date': "",
-                  'last_action': "",
-                  'last_amount': 0.00,
-                };
+            createNewAccountDialog(context).then((bankTitle) {
+              if (bankTitle != null && bankTitle.isNotEmpty) {
                 setState(() {
-                  accountBox.put(infoMap["name"], infoMap);
+                  createNewAccount(bankTitle);
                 });
                 navigateBankPage(context, bankTitle);
               }
             });
           },
           borderRadius: BorderRadius.circular(30),
-          highlightColor: yellowColor2,
-          splashColor: yellowColor2,
+          highlightColor: innerTanColor,
+          splashColor: innerTanColor,
           child: Ink(
             height: 135,
             width: 380,
             decoration: BoxDecoration(
               boxShadow: [
                 new BoxShadow(
-                  color: Colors.black,
-                  blurRadius: 9.0,
+                  color: darkGreenColor,
+                  blurRadius: 7.0,
                   spreadRadius: 2.0,
                 ),
               ],
-              border: Border.all(color: yellowColor1, width: 10),
-              color: yellowColor3,
+              border: Border.all(color: tanBorderColor, width: 10),
+              color: darkTanColor,
               borderRadius: BorderRadius.circular(30),
             ),
             child: Icon(
@@ -185,54 +171,92 @@ class _BankScreenState extends State<BankScreen> {
             ),
           ),
         ),
-      );
+      ),
+      SizedBox(height: 25),
+      Text(
+        "Hold an account to access its options",
+        style: regFontStyleSmallBold,
+        textAlign: TextAlign.center,
+      ),
+      SizedBox(height: 25),
+      Text("Schmoney Technologies", style: regFontStyleSmall),
+      SizedBox(height: 15),
+    ]);
   } //widget
 
-  TextEditingController labelTextController = TextEditingController();
+  Future createNewAccountDialog(BuildContext context) {
+    TextEditingController labelTextController = TextEditingController();
+    bool _validate = false;
 
-  Future<String> createAlertDialog(BuildContext context) {
     return showDialog(
         context: context,
-        barrierDismissible: false, //can exit by tapping outside the box
+        barrierDismissible: true, //can exit by tapping outside the box
         builder: (context) {
-          return AlertDialog(
-            title: Text(
-              "New Bank Source",
-              style: TextStyle(color: brownColor),
-            ),
-            backgroundColor: yellowColor2,
-            actionsPadding: EdgeInsets.only(right: 20.0, bottom: 10.0),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(30.0),
-            ),
-            content: TextField(
-              style: TextStyle(color: brownColor, fontSize: 20),
-              controller: labelTextController,
-            ),
-            actions: <Widget>[
-              MaterialButton(
-                color: yellowColor3,
-                elevation: 5.0,
-                child: Text("Cancel"),
-                onPressed: () {
-                  Navigator.of(context).pop();
-                  labelTextController.clear();
-                },
+          return StatefulBuilder(
+              builder: (BuildContext context, StateSetter settState) {
+                return AlertDialog(
+              title: Text(
+                "New Bank Source",
+                style: TextStyle(color: brownColor),
               ),
-              SizedBox(width: 10),
-              MaterialButton(
-                color: yellowColor3,
-                elevation: 5.0,
-                child: Text("Create"),
-                onPressed: () {
-                  Navigator.of(context)
-                      .pop(labelTextController.text.toString());
-                  labelTextController.clear();
-                },
+              backgroundColor: innerTanColor,
+              actionsPadding: EdgeInsets.only(right: 20.0, bottom: 10.0),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(30.0),
               ),
-            ],
-          );
+              content: TextField(
+                cursorColor: brownColor,
+                style: TextStyle(color: brownColor, fontSize: 20),
+                controller: labelTextController,
+                decoration: InputDecoration(
+                  border: UnderlineInputBorder(),
+                  hintText: "Name",
+                  prefixStyle: inputFontStyle,
+                  focusedBorder: UnderlineInputBorder(
+                    borderSide: const BorderSide(color: brownColor, width: 2),
+                  ),
+                  errorText: _validate ? 'Name already in use' : null,
+                ),
+              ),
+              actions: <Widget>[
+                MaterialButton(
+                  color: darkTanColor,
+                  elevation: 3.0,
+                  child: Text("Cancel", style: buttonFontStyleBrown),
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    labelTextController.clear();
+                  },
+                ),
+                SizedBox(width: 10),
+                MaterialButton(
+                  color: darkTanColor,
+                  elevation: 3.0,
+                  child: Text("Create", style: buttonFontStyleBrown),
+                  onPressed: () {
+                    String text = labelTextController.text.toString();
+                    List<String> keys = getAccounts().keys.toList().cast<String>().map((a)=>a.toLowerCase()).toList();
+                    if (keys.contains(text.toLowerCase())) {
+                      settState(() {
+                        _validate = true;
+                      });
+                    } else {
+                      _validate = false;
+                      Navigator.of(context).pop(text);
+                      labelTextController.clear();
+                    }
+                  },
+                ),
+              ],
+            );
+          });
         });
+  }
+
+  @override
+  void dispose() {
+    closeAccountsBox();
+    super.dispose();
   }
 
   //what should happen when we come back to this page
@@ -242,87 +266,253 @@ class _BankScreenState extends State<BankScreen> {
 
   //to get to next screen
   void navigateBankPage(BuildContext context, String bankTitle) {
-    Route route = MaterialPageRoute(builder: (context) => BankHistory(accountName: bankTitle));
+    Route route = MaterialPageRoute(
+        builder: (context) => BankHistory(accountName: bankTitle));
     Navigator.push(context, route).then(onGoBack);
   }
 } //State
 
-class BuildBox extends StatefulWidget {
-  BuildBox({this.infoMap});
-  final Map infoMap;
+class AccountCard extends StatelessWidget {
+  final String bankTitle;
+  final Account infoMap;
+  const AccountCard({required this.infoMap, required this.bankTitle});
 
-  @override
-  _BuildBoxState createState() => _BuildBoxState();
-}
-
-class _BuildBoxState extends State<BuildBox> {
   @override
   Widget build(BuildContext context) {
-    Map newInfoMap = widget.infoMap;
-    //for updating the infoMap during set state
+    var formatter = NumberFormat('###,###,###.00');
+    var lastAction = "";
+    Map<String, double> container = {'width': 380, 'height': 150};
+
+    //replace words with symbols
+    if (infoMap.lastAction == "Deposited") {
+      lastAction = "+";
+    } else if (infoMap.lastAction == "Withdrew") {
+      //withdrew
+      lastAction = "-";
+    }
+
+    //increase height based on how wide the balance is
+    if (infoMap.lastAmount >= 10000000000) {
+      container["height"] = 175;
+    }
     return Column(children: [
-      Container(
-        child: Stack(
-          alignment: AlignmentDirectional.center,
-          children: [
-            Ink(
-              height: 135,
-              width: 380,
-              decoration: BoxDecoration(
-                boxShadow: [
-                  new BoxShadow(
-                    color: Colors.black,
-                    blurRadius: 9.0,
-                    spreadRadius: 2.0,
-                  ),
-                ],
-                color: yellowColor3,
-                border: Border.all(color: yellowColor1, width: 10),
-                borderRadius: BorderRadius.circular(30),
-              ),
-            ),
-            InkWell(
-              onTap: () {
-                Route route = MaterialPageRoute(builder: (context) => BankHistory(accountName: widget.infoMap["name"]));
-                Navigator.push(context, route).then((value) {
-                  newInfoMap = Hive.box("accounts").get(widget.infoMap["name"]);
-                  setState(() {});
+      FocusedMenuHolder(
+        blurSize: 2.0,
+        blurBackgroundColor: reallyDarkGreen,
+        menuWidth: MediaQuery.of(context).size.width * .5,
+        menuOffset: 10,
+        onPressed: () {},
+        menuItems: <FocusedMenuItem>[
+          FocusedMenuItem(
+              title: Text('Rename'),
+              onPressed: () {
+                createRenameAccountDialog(context).then((newBankTitle) {
+                  if (newBankTitle != null && newBankTitle.isNotEmpty) {
+                    renameAccount(bankTitle, newBankTitle);
+                  }
                 });
               },
-              borderRadius: BorderRadius.circular(30),
-              highlightColor: yellowColor2,
-              splashColor: yellowColor2,
-              child: Container(
-                width: 380,
-                height: 135,
-                padding: EdgeInsets.only(top: 10),
-                alignment: Alignment.center,
-                child: FractionallySizedBox(
-                  widthFactor: .78,
-                  heightFactor: .85,
-                  child: Column(
-                    children: [
-                      AutoSizeText(
-                        "${widget.infoMap["name"]}: \$${widget.infoMap["balance"]}",
-                        style: regFontStyleBold,
-                        textAlign: TextAlign.center,
-                        maxLines: 1,
+              trailingIcon: Icon(Icons.create_rounded, color: brownColor),
+              backgroundColor: innerTanColor),
+          FocusedMenuItem(
+              title: Text('Delete'),
+              onPressed: () {
+                createDeleteAccountDialog(context, bankTitle).then((option) {
+                  if (option != null && option == "Delete") {
+                    deleteAccount(bankTitle);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                          backgroundColor: brownColor,
+                          content:
+                              Text('Account Deleted', style: snackFontStyle)),
+                    );
+                  }
+                });
+              },
+              backgroundColor: innerTanColor,
+              trailingIcon: Icon(Icons.delete, color: brownColor)),
+        ],
+        child: Container(
+          height: container["height"],
+          width: container["width"],
+          decoration: BoxDecoration(
+            boxShadow: [
+              new BoxShadow(
+                color: darkGreenColor,
+                blurRadius: 7.0,
+                spreadRadius: 2.0,
+              ),
+            ],
+            color: darkTanColor,
+            border: Border.all(color: tanBorderColor, width: 10),
+            borderRadius: BorderRadius.circular(30),
+          ),
+          child: Material(
+            color: darkTanColor,
+            borderRadius: BorderRadius.circular(30),
+            child: InkWell(
+              onTap: () {
+                Route route = MaterialPageRoute(
+                    builder: (context) => BankHistory(accountName: bankTitle));
+                Navigator.push(context, route);
+              },
+              borderRadius: BorderRadius.circular(20),
+              highlightColor: tanBorderColor,
+              splashColor: tanBorderColor,
+              child: FractionallySizedBox(
+                widthFactor: .88,
+                heightFactor: .85,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    AutoSizeText(
+                      "$bankTitle",
+                      style: regFontStyle18,
+                      textAlign: TextAlign.center,
+                      maxLines: 2,
+                    ),
+                    SizedBox(
+                      height: 2,
+                      width: 100,
+                      child: const DecoratedBox(
+                        decoration: const BoxDecoration(
+                          color: brownColor,
+                        ),
                       ),
-                      SizedBox(height: 5),
-                      Text(
-                        "${newInfoMap["last_action"]} \$${newInfoMap["last_amount"]} on ${newInfoMap["last_date"]}",
-                        style: regFontStyleBold,
-                        textAlign: TextAlign.left,
-                      ),
-                    ],
-                  ),
+                    ),
+                    SizedBox(height: 10),
+                    AutoSizeText(
+                      "\$${formatter.format(infoMap.balance)}",
+                      style: regFontStyleBold,
+                      textAlign: TextAlign.center,
+                      maxLines: 1,
+                    ),
+                    SizedBox(height: 10),
+                    AutoSizeText(
+                      "$lastAction\$${formatter.format(infoMap.lastAmount)} on ${infoMap.lastDate}",
+                      style: regFontStyle18,
+                      textAlign: TextAlign.center,
+                      maxLines: 2,
+                    ),
+                  ],
                 ),
               ),
             ),
-          ],
+          ),
         ),
       ),
       SizedBox(height: 25),
     ]);
+  }
+
+  Future createRenameAccountDialog(BuildContext context) {
+    TextEditingController labelTextController = TextEditingController();
+    bool _validate = false;
+
+    return showDialog(
+        context: context,
+        barrierDismissible: true, //can exit by tapping outside the box
+        builder: (context) {
+          return StatefulBuilder(
+              builder: (BuildContext context, StateSetter settState)
+          {
+            return AlertDialog(
+              title: Text(
+                "Rename Account",
+                style: TextStyle(color: brownColor),
+              ),
+              backgroundColor: innerTanColor,
+              actionsPadding: EdgeInsets.only(right: 20.0, bottom: 10.0),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(30.0),
+              ),
+              content: TextField(
+                cursorColor: brownColor,
+                style: TextStyle(color: brownColor, fontSize: 20),
+                controller: labelTextController,
+                decoration: InputDecoration(
+                  border: UnderlineInputBorder(),
+                  hintText: "New name",
+                  prefixStyle: inputFontStyle,
+                  focusedBorder: UnderlineInputBorder(
+                    borderSide: const BorderSide(color: brownColor, width: 2),
+                  ),
+                  errorText: _validate ? 'Name already in use' : null,
+                ),
+              ),
+              actions: <Widget>[
+                MaterialButton(
+                  color: darkTanColor,
+                  elevation: 3.0,
+                  child: Text("Cancel", style: buttonFontStyleBrown),
+                  onPressed: () {
+                    Navigator.of(context).pop("");
+                    labelTextController.clear();
+                  },
+                ),
+                SizedBox(width: 10),
+                MaterialButton(
+                  color: darkTanColor,
+                  elevation: 3.0,
+                  child: Text("Rename", style: buttonFontStyleBrown),
+                  onPressed: () {
+                    String text = labelTextController.text.toString();
+                    List<String> keys = getAccounts().keys.toList().cast<String>().map((a)=>a.toLowerCase()).toList();
+                    if (keys.contains(text.toLowerCase())) {
+                      settState(() {
+                        _validate = true;
+                      });
+                    } else {
+                      _validate = false;
+                      Navigator.of(context).pop(text);
+                      labelTextController.clear();
+                    }
+                  },
+                ),
+              ],
+            );
+          });
+        });
+  }
+
+  Future createDeleteAccountDialog(BuildContext context, String bankTitle) {
+    return showDialog(
+        context: context,
+        barrierDismissible: true, //can exit by tapping outside the box
+        builder: (context) {
+          return AlertDialog(
+            title: Text(
+              "Delete Account",
+              style: TextStyle(color: brownColor),
+            ),
+            backgroundColor: innerTanColor,
+            actionsPadding: EdgeInsets.only(right: 20.0, bottom: 10.0),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(30.0),
+            ),
+            content: Text(
+                "Are you sure you want to delete $bankTitle this account?",
+                style: TextStyle(color: brownColor)),
+            actions: <Widget>[
+              MaterialButton(
+                color: darkTanColor,
+                elevation: 3.0,
+                child: Text("Cancel", style: buttonFontStyleBrown),
+                onPressed: () {
+                  Navigator.of(context).pop('Cancel');
+                },
+              ),
+              SizedBox(width: 10),
+              MaterialButton(
+                color: darkTanColor,
+                elevation: 3.0,
+                child: Text("Delete", style: buttonFontStyleBrown),
+                onPressed: () {
+                  Navigator.of(context).pop('Delete');
+                },
+              ),
+            ],
+          );
+        });
   }
 }

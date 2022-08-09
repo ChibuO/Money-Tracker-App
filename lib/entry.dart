@@ -5,15 +5,15 @@ part 'entry.g.dart';
 @HiveType(typeId: 0)
 class Entry {
   @HiveField(0)
-  final String account;
+  late String account;
   @HiveField(1)
-  final String action;
+  late String action;
   @HiveField(2)
-  final double balance;
+  late double balance;
   @HiveField(3)
-  final String date;
+  late String date;
   @HiveField(4)
-  final String note;
+  late String note;
 
   Entry(this.account, this.action, this.balance,
       this.date, this.note);
