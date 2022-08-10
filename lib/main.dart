@@ -63,9 +63,6 @@ class MyApp extends StatelessWidget {
         ),
       ),
       child: Container(
-        // blur: 9,
-        // color: tanShadowColor,
-        // offset: const Offset(0, -9),
         child: Container(
           height: 160,
           width: 350,
@@ -179,7 +176,7 @@ class _BankScreenState extends State<BankScreen> {
         textAlign: TextAlign.center,
       ),
       SizedBox(height: 25),
-      Text("Schmoney Technologies", style: regFontStyleSmall),
+      Text("Shmoney Technologies", style: regFontStyleSmall),
       SizedBox(height: 15),
     ]);
   } //widget
